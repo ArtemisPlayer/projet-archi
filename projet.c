@@ -1,13 +1,13 @@
 // Nathan Gasc & Rémi La Fay
-// to run usung gcc: gcc -o projet projet.c -mavx -lpthread -lm
+// Pour compiler: gcc -o projet projet.c -mavx -lpthread -lm
 
 #include <time.h>
 #include <stdio.h>
 #include <immintrin.h>
-#include <sys/time.h> // for timing
+#include <sys/time.h>
 #include <math.h>
 
-double now(){ // copy from the class
+double now(){
     struct timeval t; double f_t;
     gettimeofday(&t, NULL);
     f_t = t.tv_usec; f_t = f_t/1000000.0; f_t +=t.tv_sec;
@@ -15,7 +15,7 @@ double now(){ // copy from the class
 }
 
 // Exercice 1
-// sequential version
+// Version séquentielle 
 
 double dist(float *a, float *b, int n){
     double d = 0;
@@ -26,7 +26,8 @@ double dist(float *a, float *b, int n){
 }
 
 // Exercice 2
-// same thing but we use AVX assuming a and b are aligned and n is a multiple of 8
+// Version vectorisée avec AVX. On suppose que a et b sont alignés et 
+// que n est un multiple de 8
 double dist_avx(float *a, float *b, int n){
     double d = 0;
     __m256 mm_a, mm_b, mm_d;
@@ -44,7 +45,8 @@ double dist_avx(float *a, float *b, int n){
 }
 
 // Exercice 3
-// same thing than ex2 but this time we don't assume that a and b are aligned and that n is a multiple of 8
+// Version vectorisée avec AVX. On suppose que a et b ne sont pas nécessairement 
+// alignés et que n n'est pas nécessairement un multiple de 8
 
 double dist_avx_unaligned(float *a, float *b, int n){
     double d = 0;
@@ -59,7 +61,7 @@ double dist_avx_unaligned(float *a, float *b, int n){
         mm_d = _mm256_sqrt_ps(mm_d);
         d += mm_d[0] + mm_d[1] + mm_d[2] + mm_d[3] + mm_d[4] + mm_d[5] + mm_d[6] + mm_d[7];
     }
-    // we deal with the remaining elements
+    // On traite les éléments restants
     for(int i = n - n%8; i < n; i++){
         d += sqrt(a[i]*a[i]*a[i]*a[i] + b[i]*b[i]*b[i]*b[i]);
     }
@@ -67,7 +69,7 @@ double dist_avx_unaligned(float *a, float *b, int n){
 }
 
 // Exercice 3 bis
-// same thing than ex3 but we split the job between multiple thread using pthreads
+// Idem que l'exercice 3 mais on répartit le travail entre plusieurs threads
 
 #include <pthread.h>
 #define NTHREADS 8
@@ -76,11 +78,11 @@ typedef struct {
     float *a;
     float *b;
     int n;
-    double *d; // a pointer to the global d
-    pthread_mutex_t *mutex; // ensuring d is written by only one thread at a time
+    double *d; // un pointeur vers la variable globale d
+    pthread_mutex_t *mutex; // pour protéger l'accès à d
 } dist_avx_unaligned_args;
 
-
+// fonction exécutée par chaque thread
 void *dist_avx_unaligned_threaded_worker(void *arg){
     dist_avx_unaligned_args *args = (dist_avx_unaligned_args *)arg;
     double d = 0;
@@ -94,7 +96,6 @@ void *dist_avx_unaligned_threaded_worker(void *arg){
         mm_d = _mm256_sqrt_ps(mm_d);
         d += mm_d[0] + mm_d[1] + mm_d[2] + mm_d[3] + mm_d[4] + mm_d[5] + mm_d[6] + mm_d[7];
     }
-    // we deal with the remaining elements
     for(int i = args->n - args->n%8; i < args->n; i++){
         d += sqrt(args->a[i]*args->a[i]*args->a[i]*args->a[i] + args->b[i]*args->b[i]*args->b[i]*args->b[i]);
     }
@@ -103,6 +104,7 @@ void *dist_avx_unaligned_threaded_worker(void *arg){
     pthread_mutex_unlock(args->mutex);
 }
 
+// fonction principale
 double dist_avx_unaligned_threaded(float *a, float *b, int n){
     double d = 0; // global d
 
@@ -113,7 +115,7 @@ double dist_avx_unaligned_threaded(float *a, float *b, int n){
     pthread_mutex_init(&mutex, NULL);
 
     for(int i = 0; i < NTHREADS; i++){
-        // we split the job between the threads
+        // on sépare le travail en NTHREADS parties
         args[i].a = a + i*n/NTHREADS;
         args[i].b = b + i*n/NTHREADS;
         args[i].n = n/NTHREADS;
@@ -130,9 +132,25 @@ double dist_avx_unaligned_threaded(float *a, float *b, int n){
 
 
 // Exercice 4
-// the main function that creates the vectors with random values between 0 and 1, calls the different versions of the dist function,
-// compares the results and times the execution of each version
-// it also display the total acceleration = time of the sequential version / time of the parallel version
+// La fonction main crée les vecteurs avec des valeurs aléatoires entre 0 et 1, 
+// appelle les différentes versions de la fonction dist,
+// compare les résultats et mesure le temps d'exécution de chaque version et
+// elle affiche aussi l'accélération totale = temps de la version séquentielle / temps de la version parallèle
+
+// Exemple d'output:
+
+// Les distances calculées (doivent être identiques):
+// d1 = 54467744.926057
+// d2 = 54467744.928190
+// d3 = 54467744.928190
+// d4 = 54467744.928190
+// Temps d'exécution en seconde:
+// t1 (seq) = 3.623515
+// t2 (avx aligned) = 0.151453
+// t3 (avx unaligned) = 0.149246
+// t4 (avx + 8 threads) = 0.033610
+// acceleration avx = 23.925011
+// acceleration avx threaded = 107.811052
 
 int main(){
     int n = 100000000;
@@ -155,13 +173,13 @@ int main(){
     double d4 = dist_avx_unaligned_threaded(a, b, n);
     t5 = now();
 
-    printf("The computed distances (should be the same for all versions):\n");
+    printf("Les distances calculées (doivent être identiques):\n");
     printf("d1 = %f\n", d1);
     printf("d2 = %f\n", d2);
     printf("d3 = %f\n", d3);
     printf("d4 = %f\n", d4);
 
-    printf("Time of execution (in seconds):\n");
+    printf("Temps d'exécution en seconde:\n");
     printf("t1 (seq) = %f\n", t2-t1);
     printf("t2 (avx aligned) = %f\n", t3-t2);
     printf("t3 (avx unaligned) = %f\n", t4-t3);
@@ -174,20 +192,3 @@ int main(){
     free(b);
     return 0;
 }
-
-// Sample output:
-
-// The computed distances (should be the same for all versions):
-// d1 = 5447397.969626
-// d2 = 5447397.969407
-// d3 = 5447397.969407
-// d4 = 5447397.969407
-// Time of execution (in seconds):
-// t1 (seq) = 0.439922
-// t2 (avx aligned) = 0.015194
-// t3 (avx unaligned) = 0.015059
-// t4 (avx + 8 threads) = 0.005796
-// acceleration avx = 28.953788
-// acceleration avx threaded = 75.901563
-
-// We observe a big variability between different runs
